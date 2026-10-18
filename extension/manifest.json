@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Browser Bridge",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Lets a local MCP client drive this browser over a token-protected localhost connection. No account login needed.",
-  "permissions": ["tabs", "scripting", "debugger", "storage", "alarms"],
+  "permissions": ["tabs", "tabGroups", "scripting", "debugger", "storage", "alarms", "notifications", "downloads"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Browser Bridge settings" },
+  "action": { "default_title": "Browser Bridge settings", "default_icon": { "16": "icon16.png", "48": "icon48.png" } },
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
   "options_page": "options.html"
 }

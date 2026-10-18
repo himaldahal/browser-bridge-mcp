@@ -10,14 +10,21 @@ MCP client  <--stdio-->  server/server.js  <--ws://127.0.0.1:17333-->  extension
 
 ## Features
 
-- 23 tools: tabs, navigation, page reading with stable element refs, text extraction, screenshots
-  (viewport or full page), click, hover, drag, typing, key chords, scroll, form fill, JavaScript,
-  console and network capture, waiting, file upload, window resize.
-- Real input events through the Chrome debugger API (trusted clicks and keystrokes), so it works on
-  apps that ignore synthetic DOM events.
-- Several client sessions can share one browser: the first server owns the port, later ones join it.
-- Built-in guard rails: loopback only, secret token, web-page origins refused, per-site block list,
-  master off switch.
+- **42 tools** for tabs, windows, reading, input, monitoring, SEO checks and human hand-off.
+- **Parallel by design.** Commands for different tabs run at the same time, commands for one tab run in order.
+  `tabs_open_many` opens dozens of pages at once, `batch` runs many operations in one call, and background tabs
+  keep rendering (focus emulation), so a task can work several sites at once.
+- **Whole-browser control.** Every window and tab, tab groups, duplicate and move, downloads, JavaScript dialogs,
+  popups, shadow DOM and same-origin iframes.
+- **Monitoring.** An `events` timeline covers new tabs (with their opener), navigations, loads, closes, dialogs,
+  downloads, HTTP errors and CAPTCHAs, plus per-tab console and network capture. Open alerts are attached to
+  every tool reply, so nothing is missed mid-task.
+- **Human in the loop.** CAPTCHAs are detected and the tab is locked for input; `ask_human` shows a prompt on the
+  page and waits for the person. Risky clicks (Post, Send, Submit, Delete, Pay) can require approval.
+- **Task tools.** `seo_audit`, `seo_site_check`, `get_links` and `check_links`, `fetch_url`, `fill_form`.
+- **Workflow prompts** for SEO audits, brand presence checks, social posting and form filling (see `docs/workflows.md`).
+- Real input events through the Chrome debugger API (trusted clicks and keystrokes), so apps that ignore synthetic
+  DOM events still work. Several MCP client sessions can share one browser.
 
 ## Requirements
 
@@ -46,23 +53,17 @@ Optional: set `CBB_PORT` (server environment) and the same port in the extension
 
 ## Tools
 
-| Tool | What it does |
+| Group | Tools |
 | --- | --- |
-| `status` | Check bridge and extension connection |
-| `tabs_list`, `tab_create`, `tab_close`, `tab_activate` | Manage tabs |
-| `navigate` | Open a URL, or `back`, `forward`, `reload` |
-| `read_page` | Interactive elements as `[ref_N] role "name"`; `filter: all` adds text; `query` narrows |
-| `get_text` | Visible page text |
-| `screenshot` | Viewport or full-page JPEG; coordinates match click space |
-| `click`, `hover`, `drag` | Mouse input by ref or x,y |
-| `type`, `key` | Text entry and key chords such as `ctrl+a`, `shift+Enter` |
-| `scroll` | Scroll a page or element, or bring a ref into view |
-| `form_input` | Set text, select option or checkbox |
-| `eval_js` | Run JavaScript in the page |
-| `console_logs`, `network_requests` | Captured since the tab was first used, regex filters |
-| `wait_for` | Wait for text to appear |
-| `upload_file` | Attach local files to a file input |
-| `resize_window`, `detach` | Window size; release the debugger |
+| Overview | `status`, `events`, `reload_extension` |
+| Tabs and windows | `tabs_list`, `windows_list`, `window_create`, `window_close`, `tab_create`, `tabs_open_many`, `tab_duplicate`, `group_tabs`, `tab_close`, `tab_activate`, `navigate`, `resize_window`, `detach` |
+| Reading | `read_page` (refs), `get_text`, `get_links`, `screenshot`, `console_logs`, `network_requests`, `wait_for`, `downloads_list` |
+| Input | `click`, `hover`, `drag`, `type`, `key`, `scroll`, `form_input`, `fill_form`, `upload_file`, `eval_js`, `handle_dialog` |
+| Human in the loop | `detect_captcha`, `ask_human` |
+| SEO and web checks | `seo_audit`, `seo_site_check`, `fetch_url`, `check_links` |
+| Parallelism | `batch` (runs many tool calls at once) |
+
+Prompts: `seo_audit`, `brand_presence`, `post_to_social`, `fill_form`.
 
 ## Security model
 
@@ -70,16 +71,21 @@ This tool gives a program full control of your browser, including tabs you are l
 
 - The server binds to `127.0.0.1` only. A random 192-bit token is created at `~/.browser-bridge/token` (mode 600).
 - The WebSocket rejects any connection with a web-page `Origin`, so a website cannot talk to it.
-- The settings page has a **Blocked sites** list (subdomains included). Blocked sites are refused by every tool.
-  Add banks, email and admin panels before you start.
-- Untick the master switch to cut access immediately.
-- Chrome shows a "started debugging this browser" bar while the extension is attached to a tab. This is built into
-  the debugger API. The extension detaches from tabs idle for 10 minutes.
-- Review what your MCP client is allowed to do before approving actions on logged-in sites.
+- **CAPTCHAs are never automated.** Detection locks the tab: clicks, typing, keys, form fills, uploads and
+  `eval_js` are refused until the person solves the challenge and presses Done in the on-page prompt.
+- **Approval prompts.** With "Ask me before clicks on buttons like Post, Send, Submit, Delete, Pay" on (default),
+  those clicks pause until you press Allow, Allow on this site for 10 min, or Deny. The prompt lives in a closed
+  shadow root, accepts only trusted clicks, and automated clicks aimed at it are refused, so neither a page script
+  nor the automation itself can approve for you.
+- **Blocked sites** (settings, subdomains included) are refused by every tool. Add banks, email and admin panels.
+- The master switch cuts access immediately.
+- Chrome shows a "started debugging this browser" bar while attached. This is built into the debugger API.
+  The extension detaches from tabs idle for 10 minutes.
+- `fetch_url` and `check_links` send no cookies.
 
 ## Limitations
 
-- Element refs do not reach into iframes; use `eval_js` or x,y clicks there.
+- Element refs reach same-origin iframes and shadow DOM, not cross-origin iframes (use x,y clicks there).
 - Console and network capture start when a tab is first used.
 - Snap-packaged Chromium can only read uploads from non-hidden folders under your home directory.
 - Browser internal pages (`chrome://`, the web store) cannot be controlled.
@@ -87,8 +93,9 @@ This tool gives a program full control of your browser, including tabs you are l
 ## Project layout
 
 ```
-extension/   Manifest V3 extension (background.js, options page)
+extension/   Manifest V3 extension (background.js, options page, icons)
 server/      MCP server and WebSocket hub (server.js)
+docs/        Workflow recipes
 ```
 
 ## License

@@ -1,4 +1,4 @@
-const DEFAULTS = { token: '', port: 17333, enabled: true, blocked: '' };
+const DEFAULTS = { token: '', port: 17333, enabled: true, blocked: '', gate: true };
 const $ = id => document.getElementById(id);
 
 async function load() {
@@ -6,6 +6,7 @@ async function load() {
   $('token').value = c.token;
   $('port').value = c.port;
   $('enabled').checked = c.enabled;
+  $('gate').checked = c.gate;
   $('blocked').value = c.blocked;
   refresh();
 }
@@ -23,6 +24,7 @@ $('save').addEventListener('click', async () => {
     token: $('token').value.trim(),
     port: Number($('port').value) || DEFAULTS.port,
     enabled: $('enabled').checked,
+    gate: $('gate').checked,
     blocked: $('blocked').value,
   });
   setTimeout(refresh, 800);
