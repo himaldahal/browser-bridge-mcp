@@ -1,0 +1,14 @@
+{
+  "name": "browser-bridge-mcp-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "description": "MCP server for the Browser Bridge extension",
+  "license": "MIT"
+}

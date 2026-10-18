@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser Bridge</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1c1c1c; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  label { display: block; margin-top: 16px; font-weight: 600; }
+  input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; border: 1px solid #bbb; border-radius: 6px; }
+  textarea { min-height: 90px; font-family: ui-monospace, monospace; }
+  .hint { color: #666; font-weight: 400; font-size: 12px; }
+  button { margin-top: 20px; padding: 8px 18px; font: inherit; border: 0; border-radius: 6px; background: #1c1c1c; color: #fff; cursor: pointer; }
+  #status { margin-top: 16px; padding: 8px 10px; border-radius: 6px; background: #eee; }
+  #status.on { background: #d9f2dd; }
+  #status.off { background: #f6dcdc; }
+</style>
+</head>
+<body>
+<h1>Browser Bridge</h1>
+<div class="hint">Connects this browser to the local MCP bridge. Nothing leaves your machine.</div>
+
+<div id="status">Checking...</div>
+
+<label>Token <span class="hint">(run <code>node server/server.js --token</code> and paste it here)</span></label>
+<input type="text" id="token" autocomplete="off" spellcheck="false">
+
+<label>Port</label>
+<input type="number" id="port" min="1024" max="65535">
+
+<label><input type="checkbox" id="enabled"> Allow remote control of this browser</label>
+
+<label>Blocked sites <span class="hint">(one domain per line, subdomains included; no tool can touch these)</span></label>
+<textarea id="blocked" spellcheck="false"></textarea>
+
+<button id="save">Save</button>
+<script src="options.js"></script>
+</body>
+</html>
