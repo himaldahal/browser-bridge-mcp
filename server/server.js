@@ -12,22 +12,94 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
 
+const VERSION = '3.0.0';
+const PROTOCOL = 3;
 const PORT = Number(process.env.CBB_PORT) || 17333;
 const DIR = path.join(os.homedir(), '.browser-bridge');
 const TOKEN_FILE = path.join(DIR, 'token');
+const PIN_FILE = path.join(DIR, 'extension-pin.json');
+const AUDIT_FILE = path.join(DIR, 'audit.log');
+const AUDIT_MAX_BYTES = 5 * 1024 * 1024;
 const MAX_WAIT = 15 * 60 * 1000;
 
+function newToken() { return crypto.randomBytes(24).toString('hex'); }
+
+function ensureDir() { fs.mkdirSync(DIR, { recursive: true, mode: 0o700 }); try { fs.chmodSync(DIR, 0o700); } catch (e) {} }
+
 function loadToken() {
-  fs.mkdirSync(DIR, { recursive: true, mode: 0o700 });
-  if (!fs.existsSync(TOKEN_FILE)) fs.writeFileSync(TOKEN_FILE, crypto.randomBytes(24).toString('hex') + '\n', { mode: 0o600 });
+  ensureDir();
+  if (!fs.existsSync(TOKEN_FILE)) fs.writeFileSync(TOKEN_FILE, newToken() + '\n', { mode: 0o600 });
+  try { // the token must not be readable by other accounts on this machine
+    const mode = fs.statSync(TOKEN_FILE).mode & 0o077;
+    if (mode) { fs.chmodSync(TOKEN_FILE, 0o600); console.error('[bridge] tightened permissions on', TOKEN_FILE); }
+  } catch (e) {}
   return fs.readFileSync(TOKEN_FILE, 'utf8').trim();
 }
-const TOKEN = loadToken();
 
-if (process.argv.includes('--token')) {
-  console.log(TOKEN);
+const args = new Set(process.argv.slice(2));
+
+if (args.has('--help') || args.has('-h')) {
+  console.log(`Browser Bridge MCP server ${VERSION}
+  node server.js                 run as an MCP stdio server (the first instance also hosts the hub)
+  node server.js --hub-only      host the hub without an MCP client
+  node server.js --token         print the secret token
+  node server.js --rotate-token  replace the token (paste the new one into the extension afterwards)
+  node server.js --reset-pin     forget the pinned extension id (use after loading the extension from a new folder)
+  node server.js --audit [n]     print the last n audit entries (default 50)
+  node server.js --follow        watch calls live, like tail -f (add --json for raw lines)
+  Environment: CBB_PORT sets the port (default 17333). CBB_LOG=1 also prints every call to stderr as it happens.`);
   process.exit(0);
 }
+if (args.has('--rotate-token')) {
+  ensureDir();
+  fs.writeFileSync(TOKEN_FILE, newToken() + '\n', { mode: 0o600 });
+  console.log(fs.readFileSync(TOKEN_FILE, 'utf8').trim());
+  console.error('Token replaced. Paste it into the extension settings; restart running bridge servers.');
+  process.exit(0);
+}
+if (args.has('--reset-pin')) {
+  try { fs.unlinkSync(PIN_FILE); console.error('Extension pin cleared. The next extension to authenticate will be pinned.'); } catch (e) { console.error('No pin was set.'); }
+  process.exit(0);
+}
+if (args.has('--audit')) {
+  const n = Number(process.argv[process.argv.indexOf('--audit') + 1]) || 50;
+  try { console.log(fs.readFileSync(AUDIT_FILE, 'utf8').trim().split('\n').slice(-n).join('\n')); } catch (e) { console.error('No audit log yet.'); }
+  process.exit(0);
+}
+
+// One readable line per audit entry, used by --follow and CBB_LOG.
+const color = process.stdout.isTTY || process.env.FORCE_COLOR;
+const paint = (c, t) => (color ? `\x1b[${c}m${t}\x1b[0m` : t);
+const clean = v => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' '); // agents and pages control some of these fields
+function prettyLine(raw) {
+  let e;
+  try { e = JSON.parse(raw); } catch (x) { return clean(raw); }
+  const time = new Date(e.ts).toTimeString().slice(0, 8) + '.' + String(new Date(e.ts).getMilliseconds()).padStart(3, '0');
+  const mark = e.ok ? paint('32', 'ok ') : paint('31', 'ERR');
+  const a = e.args && Object.keys(e.args).length ? ' ' + clean(JSON.stringify(e.args)).slice(0, 110) : '';
+  return `${paint('2', time)} ${mark} ${paint('1', clean(e.tool).padEnd(16))} ${String(Number(e.ms) || 0).padStart(5)}ms ${paint('2', clean(e.client))}${a}${e.error ? ' ' + paint('33', clean(e.error)) : ''}`;
+}
+if (args.has('--follow')) {
+  const json = args.has('--json');
+  const out = l => console.log(json ? l : prettyLine(l));
+  let pos = 0;
+  try { const txt = fs.readFileSync(AUDIT_FILE, 'utf8'); txt.trim().split('\n').filter(Boolean).slice(-15).forEach(out); pos = Buffer.byteLength(txt); } catch (e) {}
+  console.error(paint('2', 'Watching ' + AUDIT_FILE + ' (Ctrl+C to stop)'));
+  let buf = '';
+  setInterval(() => {
+    try {
+      const size = fs.statSync(AUDIT_FILE).size;
+      if (size < pos) pos = 0; // rotated
+      if (size === pos) return;
+      const fd = fs.openSync(AUDIT_FILE, 'r'); const b = Buffer.alloc(size - pos); fs.readSync(fd, b, 0, b.length, pos); fs.closeSync(fd); pos = size;
+      buf += b.toString('utf8'); const parts = buf.split('\n'); buf = parts.pop(); parts.filter(Boolean).forEach(out);
+    } catch (e) {}
+  }, 200);
+  await new Promise(() => {});
+}
+
+const TOKEN = loadToken();
+if (args.has('--token')) { console.log(TOKEN); process.exit(0); }
 
 const log = (...a) => console.error('[bridge]', ...a); // stdout is reserved for MCP
 
@@ -36,25 +108,84 @@ function safeEq(a, b) {
   const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
+// Both sides prove they know the token without ever sending it, so a rogue process squatting the port learns nothing.
+const mac = (...parts) => crypto.createHmac('sha256', TOKEN).update(parts.join('|')).digest('hex');
+const nonce = () => crypto.randomBytes(16).toString('hex');
+
+// ---------- pinning, throttling, audit ----------
+
+function readPin() { try { return JSON.parse(fs.readFileSync(PIN_FILE, 'utf8')).origin || null; } catch (e) { return null; } }
+function writePin(origin) { ensureDir(); fs.writeFileSync(PIN_FILE, JSON.stringify({ origin, pinnedAt: new Date().toISOString() }) + '\n', { mode: 0o600 }); }
+
+const authFails = [];
+let lockedUntil = 0;
+function noteAuthFailure(why) {
+  const now = Date.now();
+  authFails.push(now);
+  while (authFails.length && now - authFails[0] > 60000) authFails.shift();
+  log('authentication failed:', why);
+  if (authFails.length >= 8) { lockedUntil = now + 60000; log('too many failed attempts; refusing connections for 60s'); }
+}
+
+const REDACT = { type: ['text'], key: ['keys'], form_input: ['value'], fill_form: ['fields'], eval_js: ['expression'], handle_dialog: ['text'] };
+const noQuery = u => String(u).replace(/[?#].*$/, '?...'); // query strings and fragments often carry tokens
+function redact(method, params) {
+  const out = {};
+  for (const [k, v] of Object.entries(params || {})) {
+    if ((REDACT[method] || []).includes(k)) {
+      // what was typed, pressed or run can be a password or a secret, so keep only its size (and a short fingerprint of scripts)
+      const str = typeof v === 'string' ? v : JSON.stringify(v);
+      out[k] = method === 'eval_js' ? `[${str.length} chars sha256:${crypto.createHash('sha256').update(str).digest('hex').slice(0, 12)}]` : `[${str.length} chars]`;
+    }
+    else if ((k === 'url' || k === 'origin') && typeof v === 'string') out[k] = noQuery(v).slice(0, 200);
+    else if (k === 'urls' && Array.isArray(v)) out[k] = v.map(u => noQuery(u).slice(0, 200)).slice(0, 40);
+    else if (method === 'wait_for' && k === 'text') out[k] = `[${String(v).length} chars]`;
+    else out[k] = typeof v === 'string' && v.length > 200 ? v.slice(0, 200) + '...' : v;
+  }
+  return out;
+}
+function audit(entry) {
+  try {
+    ensureDir();
+    try { if (fs.statSync(AUDIT_FILE).size > AUDIT_MAX_BYTES) fs.renameSync(AUDIT_FILE, AUDIT_FILE + '.1'); } catch (e) {}
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...entry });
+    fs.appendFileSync(AUDIT_FILE, line + '\n', { mode: 0o600 });
+    if (process.env.CBB_LOG) console.error('[call]', prettyLine(line));
+  } catch (e) {}
+}
 
 // ---------- backend: hub or client ----------
 
 let nextId = 1;
 const pending = new Map(); // id -> {res, rej, t}
+const relay = new Map(); // hub: extension-facing id -> { ws, id } of the client that asked
 let ext = null; // hub: the extension socket
 let clientWs = null; // client mode: socket to the hub
 let mode = null; // 'hub' | 'client'
 
+function cancelRemote(id) { // the caller no longer waits: do not let the browser run the command later
+  try {
+    if (mode === 'hub' && ext && ext.readyState === WebSocket.OPEN) ext.send(JSON.stringify({ cancel: id }));
+    else if (mode === 'client' && clientWs && clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ cancel: id }));
+  } catch (e) {}
+}
+function arm(id, ms) {
+  const p = pending.get(id);
+  if (!p) return;
+  clearTimeout(p.t);
+  p.t = setTimeout(() => { pending.delete(id); cancelRemote(id); p.rej(new Error('timed out waiting for the browser (it may be paused by the person)')); }, ms);
+}
 function track(id, timeoutMs) {
   return new Promise((res, rej) => {
-    const t = setTimeout(() => { pending.delete(id); rej(new Error('timed out waiting for the browser')); }, timeoutMs);
-    pending.set(id, { res, rej, t });
+    pending.set(id, { res, rej, t: null });
+    arm(id, timeoutMs);
   });
 }
 // Resolves with { result, alerts } so every reply can carry the extension's open alerts.
 function settle(msg) {
   const p = pending.get(msg.id);
   if (!p) return;
+  if (msg.held) { arm(msg.id, MAX_WAIT); return; } // the person paused the browser: keep waiting
   pending.delete(msg.id);
   clearTimeout(p.t);
   if (msg.error) { const e = new Error(msg.error); e.alerts = msg.alerts || []; p.rej(e); }
@@ -63,75 +194,115 @@ function settle(msg) {
 
 const NOT_CONNECTED = 'The browser extension is not connected. Open its settings in the browser, paste the token (run: node ' + new URL(import.meta.url).pathname + ' --token), and tick "Allow remote control of this browser".';
 
+const HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`]);
+
 function startHub() {
   return new Promise((resolve, reject) => {
     const srv = http.createServer((_q, s) => { s.writeHead(404); s.end(); });
     const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
 
     srv.on('upgrade', (req, socket, head) => {
-      // Refuse web pages: only the extension (chrome-extension://) or a non-browser client (no Origin) may connect.
+      const refuse = why => { log('refused connection:', why); socket.destroy(); };
+      if (Date.now() < lockedUntil) return refuse('locked after failed attempts');
+      // DNS-rebinding guard: the Host header must be the loopback address we listen on.
+      if (!HOSTS.has(String(req.headers.host || '').toLowerCase())) return refuse('unexpected Host header ' + req.headers.host);
+      // Web pages are never allowed: only the extension (chrome-extension://) or a non-browser client (no Origin).
       const origin = req.headers.origin;
-      if (origin && !origin.startsWith('chrome-extension://')) { socket.destroy(); return; }
-      wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws));
+      if (origin && !origin.startsWith('chrome-extension://')) return refuse('web origin ' + origin);
+      wss.handleUpgrade(req, socket, head, ws => { ws.origin = origin || null; wss.emit('connection', ws); });
     });
 
     wss.on('connection', ws => {
       let role = null;
+      const sn = nonce();
       const authTimer = setTimeout(() => { if (!role) ws.close(); }, 5000);
+      ws.send(JSON.stringify({ hello: sn, protocol: PROTOCOL, version: VERSION }));
+      const reject = (why, reason) => { noteAuthFailure(why); try { ws.send(JSON.stringify({ authError: true, reason })); } catch (e) {} ws.close(); };
+
       ws.on('message', raw => {
         let msg;
         try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
         if (!role) {
-          if (msg.auth && safeEq(msg.auth, TOKEN) && (msg.role === 'ext' || msg.role === 'client')) {
-            role = msg.role;
-            clearTimeout(authTimer);
-            if (role === 'ext') {
-              if (ext && ext !== ws) { try { ext.close(); } catch (e) {} }
-              ext = ws;
-              log('extension connected');
-            }
-            ws.send(JSON.stringify({ authed: true }));
-          } else {
-            ws.send(JSON.stringify({ authError: true }));
-            ws.close();
+          if (typeof msg.cn !== 'string' || msg.cn.length > 64 || !(msg.role === 'ext' || msg.role === 'client') || msg.protocol !== PROTOCOL) {
+            return reject('bad handshake', msg.protocol !== PROTOCOL ? 'protocol mismatch: update the extension and the server together' : 'bad handshake');
           }
+          if (!safeEq(msg.auth || '', mac('cli', msg.role, sn, msg.cn))) return reject('wrong token', 'token rejected');
+          if (msg.role === 'ext') {
+            if (!ws.origin) return reject('extension without a browser origin', 'not a browser extension');
+            const pin = readPin();
+            if (pin && pin !== ws.origin) return reject('extension id mismatch ' + ws.origin, 'a different extension is pinned (run: node server.js --reset-pin)');
+            if (!pin) { writePin(ws.origin); log('pinned extension', ws.origin); }
+          } else if (ws.origin) return reject('client with a browser origin', 'not allowed');
+          role = msg.role;
+          clearTimeout(authTimer);
+          if (role === 'ext') {
+            if (ext && ext !== ws) { try { ext.close(); } catch (e) {} for (const id of [...pending.keys()]) settle({ id, error: 'The browser extension reconnected before answering.' }); }
+            ext = ws;
+            log('extension connected');
+          }
+          ws.send(JSON.stringify({ authed: true, proof: mac('srv', sn, msg.cn), version: VERSION }));
           return;
         }
         if (msg.ping) return;
-        if (role === 'ext') { settle(msg); return; }
+        if (role === 'client' && msg.cancel != null) {
+          for (const [hid, r] of relay) if (r.ws === ws && r.id === msg.cancel) { relay.delete(hid); if (ext && ext.readyState === WebSocket.OPEN) ext.send(JSON.stringify({ cancel: hid })); settle({ id: hid, error: 'cancelled' }); }
+          return;
+        }
+        if (role === 'ext') {
+          if (msg.held) { const r = relay.get(msg.id); if (r && r.ws.readyState === 1) r.ws.send(JSON.stringify({ id: r.id, held: true })); }
+          else relay.delete(msg.id);
+          settle(msg);
+          return;
+        }
         // role === client: forward its request to the extension
         if (msg.method) {
           if (!ext || ext.readyState !== WebSocket.OPEN) { ws.send(JSON.stringify({ id: msg.id, error: NOT_CONNECTED })); return; }
           const id = nextId++;
+          relay.set(id, { ws, id: msg.id });
           track(id, Math.min(Number(msg.timeout) || 120000, MAX_WAIT)).then(
             r => ws.readyState === 1 && ws.send(JSON.stringify({ id: msg.id, result: r.result, alerts: r.alerts })),
-            err => ws.readyState === 1 && ws.send(JSON.stringify({ id: msg.id, error: err.message, alerts: err.alerts })),
+            err => { relay.delete(id); if (ws.readyState === 1) ws.send(JSON.stringify({ id: msg.id, error: err.message, alerts: err.alerts })); },
           );
-          ext.send(JSON.stringify({ id, method: msg.method, params: msg.params }));
+          ext.send(JSON.stringify({ id, method: msg.method, params: msg.params, client: msg.client }));
         }
       });
-      ws.on('close', () => { clearTimeout(authTimer); if (ext === ws) { ext = null; log('extension disconnected'); } });
+      ws.on('close', () => {
+        clearTimeout(authTimer);
+        if (ext === ws) { // fail waiting calls now instead of letting them sit until their timeout
+          ext = null; log('extension disconnected');
+          for (const id of [...pending.keys()]) settle({ id, error: 'The browser extension disconnected before answering.' });
+        } for (const [k, v] of [...relay]) if (v.ws === ws) { relay.delete(k); if (ext && ext.readyState === WebSocket.OPEN) ext.send(JSON.stringify({ cancel: k })); settle({ id: k, error: 'client disconnected' }); }
+      });
     });
 
     srv.once('error', reject);
-    srv.listen(PORT, '127.0.0.1', () => { mode = 'hub'; log('hub listening on 127.0.0.1:' + PORT); resolve(); });
+    srv.listen(PORT, '127.0.0.1', () => { mode = 'hub'; log(`hub ${VERSION} listening on 127.0.0.1:${PORT}`); resolve(); });
   });
 }
 
 function startClient() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${PORT}/`);
-    const fail = e => reject(e instanceof Error ? e : new Error('hub connection failed'));
+    const fail = e => { try { ws.close(); } catch (x) {} reject(e instanceof Error ? e : new Error('hub connection failed')); };
+    let cn = null;
     ws.once('error', fail);
-    ws.once('open', () => ws.send(JSON.stringify({ auth: TOKEN, role: 'client' })));
     ws.on('message', raw => {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
-      if (msg.authed) { clientWs = ws; mode = 'client'; log('joined existing hub'); resolve(); return; }
-      if (msg.authError) { fail(new Error('hub rejected token')); return; }
+      if (msg.hello) {
+        cn = nonce();
+        ws.send(JSON.stringify({ role: 'client', cn, protocol: PROTOCOL, auth: mac('cli', 'client', msg.hello, cn) }));
+        ws._sn = msg.hello;
+        return;
+      }
+      if (msg.authed) {
+        if (!safeEq(msg.proof || '', mac('srv', ws._sn, cn))) return fail(new Error('the process on the port did not prove it knows the token'));
+        clientWs = ws; mode = 'client'; log('joined existing hub'); resolve(); return;
+      }
+      if (msg.authError) return fail(new Error('hub rejected us: ' + (msg.reason || 'token')));
       settle(msg);
     });
-    ws.on('close', () => { if (clientWs === ws) { clientWs = null; mode = null; } });
+    ws.on('close', () => { if (clientWs === ws) { clientWs = null; mode = null; for (const id of [...pending.keys()]) settle({ id, error: 'Lost the connection to the bridge hub.' }); } });
   });
 }
 
@@ -146,24 +317,33 @@ async function ensureBackend() {
 
 function timeoutFor(method, params) {
   if (method === 'wait_for') return ((params.timeout_s || 15) + 10) * 1000;
-  if (method === 'ask_human') return ((params.timeout_s || 300) + 30) * 1000;
+  if (method === 'ask_human') return (Math.min(params.timeout_s || 300, 300) + 30) * 1000;
   if (method === 'check_links') return 300000;
   return 120000;
+}
+
+function clientName() {
+  try { const v = server.server.getClientVersion(); return v ? `${v.name}${v.version ? ' ' + v.version : ''}` : 'unknown client'; } catch (e) { return 'unknown client'; }
 }
 
 async function call(method, params = {}) {
   await ensureBackend();
   const timeout = Math.min(timeoutFor(method, params), MAX_WAIT);
   const id = nextId++;
+  const client = clientName();
+  const t0 = Date.now();
+  const done = (ok, extra) => audit({ client, tool: method, ok, ms: Date.now() - t0, args: redact(method, params), ...extra });
+  let p;
   if (mode === 'hub') {
-    if (!ext || ext.readyState !== WebSocket.OPEN) throw new Error(NOT_CONNECTED);
-    const p = track(id, timeout);
-    ext.send(JSON.stringify({ id, method, params }));
-    return p;
+    if (!ext || ext.readyState !== WebSocket.OPEN) { done(false, { error: 'not connected' }); throw new Error(NOT_CONNECTED); }
+    p = track(id, timeout);
+    ext.send(JSON.stringify({ id, method, params, client }));
+  } else {
+    p = track(id, timeout);
+    clientWs.send(JSON.stringify({ id, method, params, timeout, client }));
   }
-  const p = track(id, timeout);
-  clientWs.send(JSON.stringify({ id, method, params, timeout }));
-  return p;
+  try { const r = await p; done(true); return r; }
+  catch (e) { done(false, { error: String(e.message).slice(0, 200) }); throw e; }
 }
 
 // ---------- MCP tools ----------
@@ -174,7 +354,7 @@ const xy = { x: z.number().optional().describe('X in CSS px (screenshot space)')
 
 const TOOLS = {
   // overview and tabs
-  status: ['Bridge and extension state, including open alerts and tabs locked by a CAPTCHA.', {}],
+  status: ['Bridge and extension state: paused or running, permissions, scope, open alerts and tabs locked by a CAPTCHA. Check this when a call is held or refused.', {}],
   tabs_list: ['List every open tab in every window (id, window, title, url). Call this first.', {}],
   windows_list: ['List all browser windows with their tabs.', {}],
   window_create: ['Open a new window (background by default). Useful to keep automated tabs away from the person\'s own.', { url: z.string().optional(), width: z.number().optional(), height: z.number().optional(), focused: z.boolean().optional() }],
@@ -190,7 +370,9 @@ const TOOLS = {
   read_page: ['Interactive elements as "[ref_N] role "name"" lines (through shadow DOM and same-origin iframes). Use refs with click/type/form_input. filter "all" also lists headings, paragraphs, images. "query" narrows to matching elements.', { tabId, filter: z.enum(['interactive', 'all']).optional(), query: z.string().optional(), max_chars: z.number().optional() }],
   get_text: ['Visible text of the page.', { tabId, max_chars: z.number().optional() }],
   get_links: ['All links on the page (href, text, rel, internal). Feed the hrefs to check_links.', { tabId, scope: z.enum(['all', 'internal', 'external']).optional(), limit: z.number().optional() }],
-  screenshot: ['Screenshot of the tab viewport (or the whole page with full_page). Works on background tabs. Coordinates for click/hover/drag are in this image space.', { tabId, full_page: z.boolean().optional() }],
+  screenshot: ['Screenshot of the tab viewport (or the whole page with full_page, or just one element with ref). Works on background tabs. Coordinates for click/hover/drag are in this image space.', { tabId, full_page: z.boolean().optional(), ref }],
+  extract: ['Read structured data without parsing text: elements matching a CSS selector (text plus the attrs you list, e.g. href, src, value), or every row of a table when selector points at a table.', { tabId, selector: z.string(), attrs: z.array(z.string()).optional(), limit: z.number().int().min(1).max(1000).optional() }],
+  emulate: ['Change how a tab renders: viewport size, device scale, mobile mode, user agent. Use reset: true to undo. Good for responsive checks.', { tabId, width: z.number().optional(), height: z.number().optional(), scale: z.number().optional(), mobile: z.boolean().optional(), user_agent: z.string().optional(), reset: z.boolean().optional() }],
   // input
   click: ['Real mouse click (trusted event) on a ref or x,y. If the person enabled approvals, clicks on buttons like Post/Send/Submit/Delete/Pay pause for their OK. Refused on a tab locked by a CAPTCHA.', { tabId, ref, ...xy, button: z.enum(['left', 'right', 'middle']).optional(), count: z.number().int().min(1).max(3).optional().describe('2 = double click') }],
   hover: ['Move the mouse over a ref or x,y.', { tabId, ref, ...xy }],
@@ -207,11 +389,11 @@ const TOOLS = {
   events: ['Browser timeline across all tabs: tab opened (with opener, so popups show), navigations, loads, closes, dialogs, downloads, HTTP errors, CAPTCHAs, human prompts. Pass the previous "latest" as since.', { since: z.number().optional(), types: z.array(z.string()).optional(), limit: z.number().optional() }],
   console_logs: ['Console output captured since the tab was first used. Filter with a regex pattern.', { tabId, pattern: z.string().optional(), clear: z.boolean().optional(), limit: z.number().optional() }],
   network_requests: ['Network requests captured since the tab was first used. Filter with a regex url_pattern.', { tabId, url_pattern: z.string().optional(), clear: z.boolean().optional(), limit: z.number().optional() }],
-  wait_for: ['Wait until text appears on the page (or just wait timeout_s seconds if no text).', { tabId, text: z.string().optional(), timeout_s: z.number().optional() }],
+  wait_for: ['Wait until text appears, a CSS selector matches, or the URL contains a string (set gone: true to wait for text or selector to disappear). With no condition it just waits timeout_s seconds.', { tabId, text: z.string().optional(), selector: z.string().optional(), url_contains: z.string().optional(), gone: z.boolean().optional(), timeout_s: z.number().optional() }],
   downloads_list: ['Recent downloads and their state.', { limit: z.number().optional() }],
   // human in the loop
   detect_captcha: ['Check whether a tab shows a CAPTCHA or human-verification challenge. Detection also happens automatically and locks the tab.', { tabId }],
-  ask_human: ['Show a prompt on the tab, bring it to the front, and wait for the person to answer. kind "captcha": they solve the challenge and press Done (use this whenever a CAPTCHA or "are you human" check appears; never try to solve it yourself). kind "confirm": approval before something irreversible. Returns the button they pressed.', { tabId, message: z.string().optional(), kind: z.enum(['info', 'confirm', 'captcha']).optional(), buttons: z.array(z.string()).optional(), timeout_s: z.number().optional() }],
+  ask_human: ['Show a prompt on the tab, bring it to the front, and wait for the person to answer. kind "captcha": they solve the challenge and press Done (use this whenever a CAPTCHA or "are you human" check appears; never try to solve it yourself). kind "confirm": approval before something irreversible. Returns the button they pressed.', { tabId, message: z.string().max(600).optional(), kind: z.enum(['info', 'confirm', 'captcha']).optional(), buttons: z.array(z.string().max(40)).max(4).optional(), timeout_s: z.number().min(5).max(300).optional() }],
   // SEO and web checks
   seo_audit: ['On-page SEO audit of a loaded tab: title, description, headings, canonical, robots, hreflang, Open Graph, JSON-LD types, images, links, word count, timings, HTTP status and headers, redirect chain, plus a list of issues.', { tabId }],
   seo_site_check: ['Site-level checks for an origin: robots.txt, sitemap.xml, llms.txt, home page status, HTTPS and HSTS.', { origin: z.string() }],
@@ -230,9 +412,10 @@ const INSTRUCTIONS = `Controls the person's own browser through an extension. Ru
 - CAPTCHAs and human-verification checks: never try to solve, bypass or click through them. The tab is locked for input until the person solves it. Call ask_human with kind "captcha", wait for the answer, then continue.
 - Posting, sending, purchasing, deleting or submitting: show the person the exact content first and get a clear yes in chat. The extension may also pause risky clicks for approval; if the person denies, stop and report.
 - Never enter passwords, payment details or one-time codes yourself. Ask the person to do it on the page.
-- After typing into a composer or form, take a screenshot and read the page to verify before submitting.`;
+- After typing into a composer or form, take a screenshot and read the page to verify before submitting.
+- The person can pause or stop you at any time. A call that is held means they paused: wait, do not retry in a loop. A refusal that names a permission, blocked site or scope is a decision, not a glitch: report it and ask, do not look for a way around it.`;
 
-const server = new McpServer({ name: 'browser-bridge', version: '2.0.0' }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: 'browser-bridge', version: VERSION }, { instructions: INSTRUCTIONS });
 
 function alertBlock(alerts) {
   return alerts && alerts.length ? [{ type: 'text', text: 'ALERTS:\n- ' + alerts.join('\n- ') }] : [];
@@ -281,7 +464,9 @@ server.tool(
       while (next < ops.length) {
         const i = next++;
         const { tool, args = {} } = ops[i];
-        if (!TOOLS[tool] || tool === 'ask_human') { results[i] = { error: `unknown or unsupported tool ${tool}` }; continue; }
+        if (!Object.hasOwn(TOOLS, tool) || tool === 'ask_human') { results[i] = { error: `unknown or unsupported tool ${tool}` }; continue; }
+        const check = z.strictObject(TOOLS[tool][1]).safeParse(args); // batch must not skip the argument checks a direct call gets
+        if (!check.success) { results[i] = { error: `invalid arguments for ${tool}: ${check.error.issues.map(x => x.path.join('.') + ' ' + x.message).join('; ').slice(0, 200)}` }; continue; }
         try {
           const r = await call(tool, args);
           r.alerts.forEach(a => allAlerts.add(a));
@@ -319,5 +504,14 @@ server.prompt('post_to_social', 'Draft and publish a post on one or more platfor
 server.prompt('fill_form', 'Fill and submit a web form from provided data', { url: z.string(), data: z.string().describe('Field values, free text or JSON') }, ({ url, data }) => userMsg(
   `Fill out the form at ${url} with this data:\n${data}\nOpen the page, read_page to list the fields, map each value to a field, use fill_form, then screenshot and show me what will be submitted. Do not enter passwords, payment details or one-time codes; ask me to type those. Wait for my yes before submitting. If a CAPTCHA appears, use ask_human.`));
 
-await server.connect(new StdioServerTransport());
-ensureBackend().catch(e => log('backend start failed:', e.message));
+if (process.argv.includes('--hub-only')) {
+  // Standalone hub (systemd user service): own the port without any MCP client. Wait if another process holds it.
+  const tryHub = async () => {
+    try { await startHub(); log('standalone hub running'); }
+    catch (e) { if (e.code !== 'EADDRINUSE') log('hub error:', e.message); setTimeout(tryHub, 30000); }
+  };
+  tryHub();
+} else {
+  await server.connect(new StdioServerTransport());
+  ensureBackend().catch(e => log('backend start failed:', e.message));
+}

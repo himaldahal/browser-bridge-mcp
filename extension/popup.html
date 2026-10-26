@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser Bridge</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header>
+  <div class="brand"><img src="icon48.png" alt="" width="22" height="22"><h1>Browser Bridge</h1></div>
+  <span class="chip" id="state">Checking</span>
+</header>
+
+<section class="card control" id="control">
+  <div class="row">
+    <button class="btn primary grow" id="pause">Pause</button>
+    <button class="btn" id="step" title="Let one command through, then pause again">Step</button>
+    <button class="btn danger" id="stop" title="Halt everything, detach from tabs and revoke approvals">Stop</button>
+  </div>
+  <div class="muted note" id="note"></div>
+</section>
+
+<section class="list" id="liveWrap" hidden>
+  <h2>Running now</h2>
+  <ul id="live"></ul>
+</section>
+
+<section class="list" id="ctlWrap" hidden>
+  <h2>Tabs the agent controls</h2>
+  <ul id="ctl"></ul>
+</section>
+
+<section class="card tab" id="tabCard" hidden>
+  <div class="grow">
+    <div class="muted small">This tab</div>
+    <div class="ellip" id="tabTitle"></div>
+    <div class="muted small ellip" id="tabHost"></div>
+  </div>
+  <label class="row gap" id="shareRow" hidden><span class="small">Agent can use it</span>
+    <span class="switch"><input type="checkbox" id="share" aria-label="Agent can use this tab"><span></span></span>
+  </label>
+</section>
+
+<section class="quick">
+  <label class="row between"><span>Allow control of this browser</span><span class="switch"><input type="checkbox" id="enabled"><span></span></span></label>
+  <label class="row between"><span>Ask before risky clicks</span><span class="switch"><input type="checkbox" id="gate"><span></span></span></label>
+  <label class="row between"><span>Highlight agent tabs in a tab group</span><span class="switch"><input type="checkbox" id="highlightTabs"><span></span></span></label>
+  <label class="row between"><span>Reach</span>
+    <select id="scope"><option value="all">All tabs</option><option value="own">Only tabs the agent opens</option></select>
+  </label>
+  <div class="perms" id="perms"></div>
+</section>
+
+<section class="list">
+  <div class="row between"><h2>Recent activity</h2><span class="row gap"><a class="btn link small" id="monitor" href="#">Live monitor</a><a class="btn link small" id="more" href="#">History</a></span></div>
+  <ul id="recent"></ul>
+  <div class="muted small" id="empty" hidden>Nothing yet. Commands show up here as they run.</div>
+</section>
+
+<footer>
+  <span class="muted small" id="foot"></span>
+  <span class="row gap"><button class="btn link small" id="revoke" hidden>Revoke approvals</button><button class="btn link small" id="settings">Settings</button></span>
+</footer>
+<script src="popup.js"></script>
+</body>
+</html>

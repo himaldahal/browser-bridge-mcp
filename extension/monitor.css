@@ -1,0 +1,23 @@
+body { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; margin: 0; }
+header { display: flex; align-items: center; gap: 18px; padding: 12px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; } .brand h1 { font-size: 15px; }
+.stats { display: flex; gap: 14px; color: var(--muted); font-size: 13px; flex: 1; } .stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.row { display: flex; gap: 8px; align-items: center; }
+.toolbar { display: flex; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; align-items: center; }
+.toolbar input[type=text] { flex: 1; min-width: 200px; }
+.check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
+#log { overflow: auto; padding: 6px 0; font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; outline: none; }
+.line { display: grid; grid-template-columns: 96px 20px 120px 70px 190px minmax(0, 1fr) 70px; gap: 10px; padding: 3px 18px; align-items: baseline; border-left: 3px solid transparent; }
+.line:hover { background: var(--panel); }
+.line .t { color: var(--muted); } .line .tool { font-weight: 650; } .line .ms { color: var(--muted); text-align: right; }
+.line .host, .line .tab { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line .sum { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line .ic { text-align: center; }
+.line.ok .ic { color: var(--ok); } .line.denied { border-left-color: var(--warn); } .line.denied .ic, .line.denied .sum { color: var(--warn); }
+.line.error { border-left-color: var(--bad); } .line.error .ic, .line.error .sum { color: var(--bad); }
+.line.running, .line.held { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.line.running .ic { color: var(--accent); animation: pulse 1s ease-in-out infinite; } .line.held .ic { color: var(--warn); }
+.line.event { color: var(--muted); font-style: italic; }
+.line.event.control { color: var(--warn); font-style: normal; font-weight: 600; }
+.foot { padding: 6px 18px; font-size: 12px; border-top: 1px solid var(--line); }
+@media (max-width: 900px) { .line { grid-template-columns: 80px 18px 100px 1fr 60px; } .line .tab, .line .host { display: none; } }

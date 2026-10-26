@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser Bridge live monitor</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="monitor.css">
+</head>
+<body>
+<header>
+  <div class="brand"><img src="icon48.png" alt="" width="22" height="22"><h1>Live monitor</h1><span class="chip" id="state">Connecting</span></div>
+  <div class="stats" aria-live="off">
+    <span><b id="nRun">0</b> running</span><span><b id="nHeld">0</b> held</span><span><b id="nOk">0</b> ok</span><span><b id="nDenied">0</b> denied</span><span><b id="nErr">0</b> errors</span>
+  </div>
+  <div class="row">
+    <button class="btn primary" id="pause">Pause</button>
+    <button class="btn" id="step">Step</button>
+    <button class="btn danger" id="stop">Stop</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="filter" placeholder="Filter by tool, site, client or text" aria-label="Filter">
+  <select id="statusFilter" aria-label="Status"><option value="">All results</option><option value="live">Running and held</option><option value="ok">OK</option><option value="denied">Denied</option><option value="error">Errors</option></select>
+  <label class="check"><input type="checkbox" id="events" checked> Browser events</label>
+  <label class="check"><input type="checkbox" id="follow" checked> Follow</label>
+  <button class="btn" id="freeze" aria-pressed="false">Freeze</button>
+  <button class="btn" id="clear">Clear view</button>
+  <button class="btn" id="copy">Copy</button>
+</div>
+
+<main id="log" aria-label="Live activity" tabindex="0"></main>
+<div class="muted foot"><span id="count"></span><span id="frozen" hidden> · frozen, new lines are waiting</span></div>
+<script src="monitor.js"></script>
+</body>
+</html>

@@ -1,35 +1,77 @@
-# Browser Bridge MCP
+<p align="center"><img src="docs/logo.svg" width="96" alt="Browser Bridge logo"></p>
 
-Let any local MCP client drive your own Chromium or Chrome, with no cloud account and no login.
-A small Manifest V3 extension talks to a local MCP server over a token-protected loopback WebSocket.
-Because it uses your real browser profile, it works on sites where you are already signed in.
+<h1 align="center">Browser Bridge MCP</h1>
+
+<p align="center">
+  Let any local MCP client drive your own Chrome or Chromium, with you holding the brakes.<br>
+  No cloud account, no login, works in the browser profile you already use.
+</p>
 
 ```
-MCP client  <--stdio-->  server/server.js  <--ws://127.0.0.1:17333-->  extension (service worker)
+MCP client  <--stdio-->  server/server.js  <--authenticated ws://127.0.0.1:17333-->  extension (service worker)
 ```
 
-## Features
+<p align="center">
+  <img src="docs/img/popup.png" width="300" alt="Popup with pause, step, stop and the tabs the agent controls">
+  &nbsp;
+  <img src="docs/img/popup-paused.png" width="300" alt="Popup while paused">
+</p>
 
-- **42 tools** for tabs, windows, reading, input, monitoring, SEO checks and human hand-off.
+## What you get
+
+**Power**
+
+- **44 tools** for tabs, windows, reading, input, structured extraction, monitoring, SEO checks and human hand-off.
 - **Parallel by design.** Commands for different tabs run at the same time, commands for one tab run in order.
   `tabs_open_many` opens dozens of pages at once, `batch` runs many operations in one call, and background tabs
-  keep rendering (focus emulation), so a task can work several sites at once.
-- **Whole-browser control.** Every window and tab, tab groups, duplicate and move, downloads, JavaScript dialogs,
-  popups, shadow DOM and same-origin iframes.
-- **Monitoring.** An `events` timeline covers new tabs (with their opener), navigations, loads, closes, dialogs,
-  downloads, HTTP errors and CAPTCHAs, plus per-tab console and network capture. Open alerts are attached to
-  every tool reply, so nothing is missed mid-task.
-- **Human in the loop.** CAPTCHAs are detected and the tab is locked for input; `ask_human` shows a prompt on the
-  page and waits for the person. Risky clicks (Post, Send, Submit, Delete, Pay) can require approval.
-- **Task tools.** `seo_audit`, `seo_site_check`, `get_links` and `check_links`, `fetch_url`, `fill_form`.
-- **Workflow prompts** for SEO audits, brand presence checks, social posting and form filling (see `docs/workflows.md`).
-- Real input events through the Chrome debugger API (trusted clicks and keystrokes), so apps that ignore synthetic
-  DOM events still work. Several MCP client sessions can share one browser.
+  keep rendering, so one task can work several sites at once.
+- **Real input.** Trusted clicks and keystrokes through the Chrome debugger API, shadow DOM and same-origin iframes.
+- **Structured reads.** `extract` returns table rows or selector matches as data. `screenshot` can capture one element.
+  `wait_for` waits on text, a selector or the URL. `emulate` switches viewport, mobile mode and user agent.
+- **Whole-browser view.** An `events` timeline of new tabs, popups, navigations, dialogs, downloads, HTTP errors and CAPTCHAs,
+  plus per-tab console and network capture.
+- **Workflow prompts** for SEO audits, brand checks, social posting and form filling (see `docs/workflows.md`).
+
+**Control**
+
+- **Pause, Step, Stop.** Pause holds every new command until you resume. Step lets one through. Stop halts everything,
+  detaches from all tabs and revokes approvals. Available in the popup, on a pill shown on controlled tabs, and with
+  `Alt+Shift+P` (pause or resume) and `Alt+Shift+X` (stop).
+- **Permissions.** Read, navigate, click and type, run scripts: each Allow, Ask or Block. Scripts default to Ask.
+- **A settings page that stays out of the way.** The sidebar folds into an icon rail (button or the `[` key) and remembers it.
+- **Reach.** Limit the agent to tabs it opened itself. Share a tab of yours with one switch.
+- **Sites.** Allow-list and block-list. `javascript:` and `data:` are never navigated to, `file://` is blocked by default.
+- **Approvals** for risky clicks (Post, Send, Submit, Delete, Pay and your own words), a CAPTCHA lock that never solves
+  a challenge, an action-per-minute limit, and a master off switch.
+- **Always visible.** Tabs the agent opens are collected in a purple **Bridge** tab group (it turns orange while paused). Your own
+  tabs join the group only while the agent is using them and leave afterwards; tabs already in your groups stay put. A pill and a
+  coloured frame appear on controlled pages, the toolbar badge counts controlled tabs, and the popup lists them with Show and Release.
+- **Realtime logging.** A live monitor page streams every command the moment it starts (running, held, ok, denied, error) together
+  with browser events, with filters, Freeze and Copy, and Pause or Stop right there. The popup and settings page update live too.
+  On the server, `node server.js --follow` tails calls in a terminal and `CBB_LOG=1` prints each call as it happens.
+- **Activity log** in the popup and settings page, exportable as JSON or CSV, plus a server-side audit file.
+
+<p align="center"><img src="docs/img/monitor.png" width="820" alt="Live monitor streaming commands"></p>
+
+<p align="center"><img src="docs/img/options.png" width="720" alt="Settings page"></p>
+
+## Security at a glance
+
+- Server binds to `127.0.0.1` only. **Mutual HMAC authentication**: the token is never sent, and the extension refuses a
+  server that cannot prove it knows the token.
+- Web-page origins and wrong `Host` headers (DNS rebinding) are refused, failed attempts are throttled, and the
+  extension id is pinned on first use.
+- The agent cannot approve its own prompts or press the pill: closed shadow roots, trusted real clicks only, not reachable
+  by keyboard, and automated clicks aimed at them are refused.
+- Typed text, key presses and form values never reach a log. `upload_file` refuses relative paths and credential files, and
+  `fetch_url` refuses your local network unless you allow it.
+
+Read the full model, including its limits, in [docs/security.md](docs/security.md).
 
 ## Requirements
 
 - Node.js 18 or newer
-- Chromium or Chrome (any Chromium-based browser that supports Manifest V3)
+- Chromium or Chrome 114 or newer (any Chromium browser with Manifest V3)
 
 ## Install
 
@@ -40,48 +82,51 @@ node server.js --token        # prints your secret token
 ```
 
 1. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, select the `extension/` folder.
-2. Click the extension icon to open settings. Paste the token, tick **Allow remote control of this browser**, Save.
-3. Register the server with your MCP client as a stdio server. The command is:
+2. Click the extension icon, open **Settings**, paste the token, press Save.
+3. Register the server with your MCP client as a stdio server:
 
    ```
    node /absolute/path/to/browser-bridge-mcp/server/server.js
    ```
 
-4. Start the client. The extension badge shows **ON** when the bridge is connected.
+4. Start the client. The popup shows **Connected** and the toolbar badge shows **ON**.
 
-Optional: set `CBB_PORT` (server environment) and the same port in the extension settings to change the default 17333.
+Upgrading from 2.x: reload the extension and restart the MCP client together. The handshake changed, and the old
+extension cannot talk to the new server.
+
+### Server options
+
+| Command | What it does |
+| --- | --- |
+| `node server.js --token` | Print the token |
+| `node server.js --rotate-token` | Replace the token, then paste the new one into the extension |
+| `node server.js --reset-pin` | Forget the pinned extension (after loading it from a new folder) |
+| `node server.js --audit 50` | Show the last 50 audit entries |
+| `node server.js --follow` | Watch calls live (`--json` for raw lines) |
+| `node server.js --hub-only` | Host the connection without an MCP client (for a background service) |
+
+`CBB_PORT` changes the port (set the same port in the extension settings). `CBB_LOG=1` makes the server print every call to stderr as it happens.
 
 ## Tools
 
 | Group | Tools |
 | --- | --- |
 | Overview | `status`, `events`, `reload_extension` |
-| Tabs and windows | `tabs_list`, `windows_list`, `window_create`, `window_close`, `tab_create`, `tabs_open_many`, `tab_duplicate`, `group_tabs`, `tab_close`, `tab_activate`, `navigate`, `resize_window`, `detach` |
-| Reading | `read_page` (refs), `get_text`, `get_links`, `screenshot`, `console_logs`, `network_requests`, `wait_for`, `downloads_list` |
+| Tabs and windows | `tabs_list`, `windows_list`, `window_create`, `window_close`, `tab_create`, `tabs_open_many`, `tab_duplicate`, `group_tabs`, `tab_close`, `tab_activate`, `navigate`, `resize_window`, `emulate`, `detach` |
+| Reading | `read_page` (refs), `get_text`, `get_links`, `extract`, `screenshot`, `console_logs`, `network_requests`, `wait_for`, `downloads_list` |
 | Input | `click`, `hover`, `drag`, `type`, `key`, `scroll`, `form_input`, `fill_form`, `upload_file`, `eval_js`, `handle_dialog` |
 | Human in the loop | `detect_captcha`, `ask_human` |
 | SEO and web checks | `seo_audit`, `seo_site_check`, `fetch_url`, `check_links` |
-| Parallelism | `batch` (runs many tool calls at once) |
+| Parallelism | `batch` |
 
 Prompts: `seo_audit`, `brand_presence`, `post_to_social`, `fill_form`.
 
-## Security model
+## How pausing works
 
-This tool gives a program full control of your browser, including tabs you are logged in to. Treat it that way.
-
-- The server binds to `127.0.0.1` only. A random 192-bit token is created at `~/.browser-bridge/token` (mode 600).
-- The WebSocket rejects any connection with a web-page `Origin`, so a website cannot talk to it.
-- **CAPTCHAs are never automated.** Detection locks the tab: clicks, typing, keys, form fills, uploads and
-  `eval_js` are refused until the person solves the challenge and presses Done in the on-page prompt.
-- **Approval prompts.** With "Ask me before clicks on buttons like Post, Send, Submit, Delete, Pay" on (default),
-  those clicks pause until you press Allow, Allow on this site for 10 min, or Deny. The prompt lives in a closed
-  shadow root, accepts only trusted clicks, and automated clicks aimed at it are refused, so neither a page script
-  nor the automation itself can approve for you.
-- **Blocked sites** (settings, subdomains included) are refused by every tool. Add banks, email and admin panels.
-- The master switch cuts access immediately.
-- Chrome shows a "started debugging this browser" bar while attached. This is built into the debugger API.
-  The extension detaches from tabs idle for 10 minutes.
-- `fetch_url` and `check_links` send no cookies.
+While paused, the extension answers every new command with a "held" signal and waits. The server keeps the call open
+for up to 15 minutes, and the agent is told through the `status` tool and the alert block that you paused it.
+`status` and `events` still answer so the agent can see why it waits. Resume releases everything in order. Stop fails
+the held calls with a message telling the agent not to retry.
 
 ## Limitations
 
@@ -93,9 +138,9 @@ This tool gives a program full control of your browser, including tabs you are l
 ## Project layout
 
 ```
-extension/   Manifest V3 extension (background.js, options page, icons)
+extension/   Manifest V3 extension: background worker, popup, settings page, icons
 server/      MCP server and WebSocket hub (server.js)
-docs/        Workflow recipes
+docs/        Security model, workflow recipes, logo
 ```
 
 ## License

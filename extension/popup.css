@@ -1,0 +1,36 @@
+body { width: 380px; padding: 14px; display: grid; gap: 12px; }
+header { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand h1 { font-size: 15px; }
+.row { display: flex; align-items: center; gap: 8px; }
+.row.between { justify-content: space-between; }
+.row.gap { gap: 12px; }
+.grow { flex: 1; min-width: 0; }
+.small { font-size: 12px; }
+.ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.control .note { margin-top: 8px; min-height: 18px; font-size: 12px; }
+.control.paused { border-color: var(--warn); background: var(--warn-bg); }
+.control.off { opacity: .7; }
+.tab { display: flex; align-items: center; gap: 10px; }
+.quick { display: grid; gap: 10px; }
+.quick label { cursor: pointer; }
+.perms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.perm { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 7px; display: grid; gap: 3px; }
+.perm span { font-size: 11px; color: var(--muted); }
+.perm select { width: 100%; padding: 2px 0; border: 0; background: transparent; font-weight: 600; font-size: 13px; }
+.perm.allow select { color: var(--ok); } .perm.ask select { color: var(--warn); } .perm.block select { color: var(--bad); }
+.list h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.list li { display: grid; grid-template-columns: 8px 1fr auto; align-items: center; gap: 9px; padding: 6px 4px; border-radius: 8px; }
+.list li:hover { background: var(--panel); }
+.list .t { overflow: hidden; }
+.list .t b { font-weight: 600; }
+.list .t div { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding-top: 10px; }
+
+.ctl li { grid-template-columns: 8px 1fr auto; }
+#ctl li .t b { font-weight: 600; }
+#ctl .dot.owned { background: #8b5cf6; } #ctl .dot.shared { background: var(--accent); }
+#ctl .acts { display: flex; gap: 4px; }
+.tag { font-size: 10.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 6px; color: var(--muted); font-weight: 600; }

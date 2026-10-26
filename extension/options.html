@@ -3,40 +3,120 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Browser Bridge</title>
-<style>
-  body { font: 14px/1.5 system-ui, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1c1c1c; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  label { display: block; margin-top: 16px; font-weight: 600; }
-  input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; border: 1px solid #bbb; border-radius: 6px; }
-  textarea { min-height: 90px; font-family: ui-monospace, monospace; }
-  .hint { color: #666; font-weight: 400; font-size: 12px; }
-  button { margin-top: 20px; padding: 8px 18px; font: inherit; border: 0; border-radius: 6px; background: #1c1c1c; color: #fff; cursor: pointer; }
-  #status { margin-top: 16px; padding: 8px 10px; border-radius: 6px; background: #eee; }
-  #status.on { background: #d9f2dd; }
-  #status.off { background: #f6dcdc; }
-</style>
+<title>Browser Bridge settings</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="options.css">
 </head>
 <body>
-<h1>Browser Bridge</h1>
-<div class="hint">Connects this browser to the local MCP bridge. Nothing leaves your machine.</div>
+<aside id="side">
+  <div class="side-head">
+    <div class="brand"><img src="icon48.png" alt="" width="26" height="26"><h1 class="lbl">Browser Bridge</h1></div>
+    <button class="fold" id="fold" type="button" aria-expanded="true" aria-controls="sidenav" title="Collapse sidebar ( [ )" aria-label="Collapse sidebar"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+  </div>
+  <nav id="sidenav" aria-label="Settings sections"><a href="#connection" title="Connection"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="lbl">Connection</span></a><a href="#permissions" title="Permissions"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span class="lbl">Permissions</span></a><a href="#sites" title="Sites"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg><span class="lbl">Sites</span></a><a href="#safety" title="Safety"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span class="lbl">Safety</span></a><a href="#activity" title="Activity log"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="lbl">Activity log</span></a><a href="#backup" title="Backup"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 19h14"/></svg><span class="lbl">Backup</span></a></nav>
+  <div class="side-status"><span class="chip" id="state" title="Checking"><span class="lbl">Checking</span></span><div class="muted small lbl" id="reason"></div></div>
+</aside>
 
-<div id="status">Checking...</div>
+<main>
+  <section id="connection">
+    <h2>Connection</h2>
+    <p class="muted">The extension and the local server prove to each other that they know the token. The token itself is never sent over the connection.</p>
+    <div class="field">
+      <label for="token">Token</label>
+      <div class="inline">
+        <input type="password" id="token" autocomplete="off" spellcheck="false" placeholder="Paste the token here">
+        <button class="btn" id="toggleToken" type="button" aria-pressed="false">Show</button>
+        <button class="btn primary" id="saveToken" type="button">Save</button>
+      </div>
+      <div class="hint">Run <code>node server/server.js --token</code> to print it. <code>--rotate-token</code> makes a new one.</div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="port">Port</label><input type="number" id="port" min="1024" max="65535"><div class="hint">Must match <code>CBB_PORT</code> on the server (default 17333).</div></div>
+      <div class="field"><label>Master switch</label>
+        <label class="toggle"><span class="switch"><input type="checkbox" id="enabled"><span></span></span><span>Allow remote control of this browser</span></label>
+        <div class="hint">Off cuts every connection at once.</div>
+      </div>
+    </div>
+  </section>
 
-<label>Token <span class="hint">(run <code>node server/server.js --token</code> and paste it here)</span></label>
-<input type="text" id="token" autocomplete="off" spellcheck="false">
+  <section id="permissions">
+    <h2>Permissions</h2>
+    <p class="muted">Choose what a connected agent may do. <b>Ask</b> shows a prompt on the page and remembers your answer for ten minutes per site. <b>Block</b> refuses outright.</p>
+    <div class="perm-list" id="permList"></div>
+    <div class="field">
+      <label for="scope">Reach</label>
+      <select id="scope"><option value="all">All tabs in this browser</option><option value="own">Only tabs the agent opened (and tabs you share)</option></select>
+      <div class="hint">With the second option the agent cannot see or touch your own tabs unless you press "Agent can use it" in the popup.</div>
+    </div>
+    <div class="field">
+      <label for="rateLimit">Action limit per minute</label>
+      <input type="number" id="rateLimit" min="0" max="5000" style="max-width:140px">
+      <div class="hint">A brake on runaway loops. 0 means no limit.</div>
+    </div>
+  </section>
 
-<label>Port</label>
-<input type="number" id="port" min="1024" max="65535">
+  <section id="sites">
+    <h2>Sites</h2>
+    <div class="field">
+      <label for="allowed">Allowed sites only <span class="muted">(optional)</span></label>
+      <textarea id="allowed" spellcheck="false" placeholder="example.com&#10;docs.example.org"></textarea>
+      <div class="hint">One domain per line, subdomains included. When this list is not empty, every other site is refused.</div>
+    </div>
+    <div class="field">
+      <label for="blocked">Blocked sites</label>
+      <textarea id="blocked" spellcheck="false" placeholder="mybank.com&#10;mail.example.com"></textarea>
+      <div class="hint">One domain per line, subdomains included. No tool can read or act on these. Add banks, email and admin panels.</div>
+    </div>
+    <label class="toggle"><span class="switch"><input type="checkbox" id="blockFiles"><span></span></span><span>Block local <code>file://</code> pages</span></label>
+    <label class="toggle"><span class="switch"><input type="checkbox" id="allowPrivate"><span></span></span><span>Allow <code>fetch_url</code> and link checks to reach this computer and your local network</span></label>
+    <div class="hint">Off by default so an agent cannot probe <code>localhost</code>, your router or cloud metadata addresses. Opening such pages in a tab is controlled by the site lists, not by this switch.</div>
+  </section>
 
-<label><input type="checkbox" id="enabled"> Allow remote control of this browser</label>
+  <section id="safety">
+    <h2>Safety</h2>
+    <label class="toggle"><span class="switch"><input type="checkbox" id="gate"><span></span></span><span>Ask me before clicks on buttons like Post, Send, Submit, Delete, Pay</span></label>
+    <div class="field">
+      <label for="riskyExtra">Extra words that count as risky</label>
+      <input type="text" id="riskyExtra" placeholder="invoice, approve, deploy">
+      <div class="hint">Comma separated. Added to the built-in list.</div>
+    </div>
+    <label class="toggle"><span class="switch"><input type="checkbox" id="pageBadge"><span></span></span><span>Show a pill with Pause and Stop on tabs the agent is using</span></label>
+    <label class="toggle"><span class="switch"><input type="checkbox" id="highlightTabs"><span></span></span><span>Collect the agent's tabs in a purple "Bridge" tab group (orange while paused)</span></label>
+    <div class="hint">Tabs the agent opens always go in the group. Your own tabs join it only while the agent is using them, and leave again afterwards. Tabs already in one of your groups stay where they are.</div>
+    <div class="field">
+      <label for="idleMin">Release idle tabs after (minutes)</label>
+      <input type="number" id="idleMin" min="1" max="240" style="max-width:140px">
+      <div class="hint">Removes the "started debugging this browser" bar from tabs the agent stopped using.</div>
+    </div>
+    <p class="muted">Shortcuts: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pauses or resumes, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> is the emergency stop. Change them at <span class="mono">chrome://extensions/shortcuts</span>.</p>
+  </section>
 
-<label><input type="checkbox" id="gate"> Ask me before clicks on buttons like Post, Send, Submit, Delete, Pay <span class="hint">(recommended)</span></label>
+  <section id="activity">
+    <h2>Activity log</h2>
+    <p><a class="btn primary" href="monitor.html" target="_blank" rel="noopener">Open the live monitor</a></p>
+    <p class="muted">Every command an agent sent, newest first. Typed text and form values are never stored. The server keeps its own copy in <span class="mono">~/.browser-bridge/audit.log</span>.</p>
+    <div class="toolbar">
+      <input type="text" id="filter" placeholder="Filter by tool, site or text" aria-label="Filter activity">
+      <select id="statusFilter" aria-label="Status"><option value="">All</option><option value="ok">OK</option><option value="denied">Denied</option><option value="error">Error</option></select>
+      <button class="btn" id="exportJson">Export JSON</button>
+      <button class="btn" id="exportCsv">Export CSV</button>
+      <button class="btn danger" id="clearLog">Clear</button>
+    </div>
+    <div class="table-wrap"><table id="log"><thead><tr><th>Time</th><th>Tool</th><th>Site</th><th>Detail</th><th>Client</th><th>Result</th></tr></thead><tbody></tbody></table></div>
+    <div class="muted small" id="logCount"></div>
+  </section>
 
-<label>Blocked sites <span class="hint">(one domain per line, subdomains included; no tool can touch these)</span></label>
-<textarea id="blocked" spellcheck="false"></textarea>
-
-<button id="save">Save</button>
+  <section id="backup">
+    <h2>Backup</h2>
+    <p class="muted">Export your settings as a file, or load them on another machine. The token is not included.</p>
+    <div class="row">
+      <button class="btn" id="exportSettings">Export settings</button>
+      <button class="btn" id="importSettings">Import settings</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+    </div>
+  </section>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
 <script src="options.js"></script>
 </body>
 </html>
